@@ -14,6 +14,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <igl/point_mesh_squared_distance.h>
+#include <igl/parula.h>
 
 
 int main(int argc, char *argv[])
@@ -26,12 +27,14 @@ int main(int argc, char *argv[])
         return t_after-t_before;
     };
 
+    std::cout << "Reading file" << std::endl;
     Eigen::MatrixXd V;
     Eigen::MatrixXi F;
 //    igl::read_triangle_mesh("../bunny.off",V,F);
     igl::read_triangle_mesh("../bathtub.obj", V,F);
 
     // Normalize to unit sphere
+    std::cout << "Normalizing dimensions" << std::endl;
     const Eigen::RowVector3d minDims = V.colwise().minCoeff();
     V = V - Eigen::VectorXd::Ones(V.rows()) * minDims;
     const double maxDims = V.maxCoeff();
@@ -40,6 +43,7 @@ int main(int argc, char *argv[])
 
 
     // Sample mesh for point cloud
+    std::cout << "Sampling points on faces" << std::endl;
     Eigen::MatrixXd P,N;
     {
         Eigen::VectorXi I;
@@ -54,44 +58,9 @@ int main(int argc, char *argv[])
             N.row(p) = FN.row(I(p));
         }
     }
-    // Build octree
-    std::vector<std::vector<int > > O_PI;
-    Eigen::MatrixXi O_CH;
-    Eigen::MatrixXd O_CN;
-    Eigen::VectorXd O_W;
-    igl::octree(P,O_PI,O_CH,O_CN,O_W);
-    Eigen::VectorXd A;
-    {
-        Eigen::MatrixXi I;
-        igl::knn(P,20,O_PI,O_CH,O_CN,O_W,I);
-        // CGAL is only used to help get point areas
-        igl::copyleft::cgal::point_areas(P,I,N,A);
-    }
-
-    // corrupt mesh (from example 717)
-//    if(argc<=1)
-//    {
-//        // corrupt mesh
-//        Eigen::MatrixXd BC;
-//        igl::barycenter(V,F,BC);
-//        Eigen::MatrixXd OV = V;
-//        V.resize(F.rows()*3,3);
-//        for(int f = 0;f<F.rows();f++)
-//        {
-//            for(int c = 0;c<3;c++)
-//            {
-//                int v = f+c*F.rows();
-//                // random rotation about barycenter
-//                Eigen::AngleAxisd R(
-//                        0.5*static_cast <double> (rand()) / static_cast <double> (RAND_MAX),
-//                        Eigen::Vector3d::Random(3,1));
-//                V.row(v) = (OV.row(F(f,c))-BC.row(f))*R.matrix()+BC.row(f);
-//                F(f,c) = v;
-//            }
-//        }
-//    }
 
     // Query points in the bounding box
+    std::cout << "Generating query points" << std::endl;
     Eigen::MatrixXd Q(1000000, 3);
     for (int i_x=0; i_x<100; ++i_x)
     {
@@ -105,106 +74,55 @@ int main(int argc, char *argv[])
         }
     }
 
-//    const int n_queries = 1000;
-//    Eigen::MatrixXd Q = Eigen::MatrixXd::Random(n_queries,3);
-//    const Eigen::RowVector3d Vmin = V.colwise().minCoeff();
-//    const Eigen::RowVector3d Vmax = V.colwise().maxCoeff();
-//    const Eigen::RowVector3d Vdiag = Vmax-Vmin;
-//    for(int q = 0;q<Q.rows();q++)
-//    {
-//        Q.row(q) = (Q.row(q).array()*0.5+0.5)*Vdiag.array() + Vmin.array();
-//    }
+    std::cout << "Getting Distance Function at query points" << std::endl;
+    Eigen::VectorXd sqrD;
+    Eigen::VectorXi II;
+    Eigen::MatrixXd CC;
+    igl::point_mesh_squared_distance(P,V,F,sqrD,II,CC);
+    Eigen::VectorXd Q_df = sqrD.array().sqrt();
 
-    // Positions of points inside of point cloud P
-    Eigen::MatrixXd QiP;
-    {
-        Eigen::MatrixXd O_CM;
-        Eigen::VectorXd O_R;
-        Eigen::MatrixXd O_EC;
-        printf("     point cloud precomputation (% 8ld points):    %g secs\n",
-               P.rows(),
-               time([&](){igl::fast_winding_number(P,N,A,O_PI,O_CH,2,O_CM,O_R,O_EC);}));
-        Eigen::VectorXd WiP;
-        printf("        point cloud evaluation  (% 8ld queries):   %g secs\n",
-               Q.rows(),
-               time([&](){igl::fast_winding_number(P,N,A,O_PI,O_CH,O_CM,O_R,O_EC,Q,2,WiP);}));
-        igl::slice_mask(Q,(WiP.array()>0.5).eval(),1,QiP);
-    }
+    std::cout << "Evaluating sign of DF" << std::endl;
+
 
     // Positions of points inside of triangle soup (V,F)
     Eigen::MatrixXd QiV;
-    {
-        igl::FastWindingNumberBVH fwn_bvh;
-        printf("triangle soup precomputation    (% 8ld triangles): %g secs\n",
-               F.rows(),
-               time([&](){igl::fast_winding_number(V.cast<float>().eval(),F,2,fwn_bvh);}));
-        Eigen::VectorXf WiV;
-        printf("      triangle soup evaluation  (% 8ld queries):   %g secs\n",
-               Q.rows(),
-               time([&](){igl::fast_winding_number(fwn_bvh,2,Q.cast<float>().eval(),WiV);}));
-        igl::slice_mask(Q,WiV.array()>0.5,1,QiV);
-    }
+    Eigen::VectorXf WiV;
+
+    igl::FastWindingNumberBVH fwn_bvh;
+    printf("triangle soup precomputation    (% 8ld triangles): %g secs\n",
+           F.rows(),
+           time([&](){igl::fast_winding_number(V.cast<float>().eval(),F,2,fwn_bvh);}));
+
+    printf("      triangle soup evaluation  (% 8ld queries):   %g secs\n",
+           Q.rows(),
+           time([&](){igl::fast_winding_number(fwn_bvh,2,Q.cast<float>().eval(),WiV);}));
+    igl::slice_mask(Q,WiV.array()>0.5,1,QiV);
 
 
-    // Visualization
     igl::opengl::glfw::Viewer viewer;
-    // For dislpaying normals as little line segments
-    Eigen::MatrixXd PN(2*P.rows(),3);
-    Eigen::MatrixXi E(P.rows(),2);
-    const double bbd = igl::bounding_box_diagonal(V);
-    for(int p = 0;p<P.rows();p++)
-    {
-        E(p,0) = 2*p;
-        E(p,1) = 2*p+1;
-        PN.row(E(p,0)) = P.row(p);
-        PN.row(E(p,1)) = P.row(p)+bbd*0.01*N.row(p);
-    }
-
-    bool show_P = false;
-    int show_Q = 0;
-
+    viewer.data().set_mesh(V,F);
     int query_data = 0;
     viewer.data_list[query_data].set_mesh(V,F);
     viewer.data_list[query_data].clear();
-    viewer.data_list[query_data].point_size = 2;
+    viewer.data_list[query_data].point_size = 6;
     viewer.append_mesh();
     int object_data = 1;
     viewer.data_list[object_data].set_mesh(V,F);
     viewer.data_list[object_data].point_size = 5;
 
-    const auto update = [&]()
+    int i_row = 0;
+    Eigen::MatrixXd Colors(10000, 3);
+    const auto update = [&](int ni_row)
     {
         viewer.data_list[query_data].clear();
-        switch(show_Q)
-        {
-            case 1:
-                // show all Q
-                viewer.data_list[query_data].set_points(Q,Eigen::RowVector3d(0.996078,0.760784,0.760784));
-                break;
-            case 2:
-                // show all Q inside
-                if(show_P)
-                {
-                    viewer.data_list[query_data].set_points(QiP,Eigen::RowVector3d(0.564706,0.847059,0.768627));
-                }else
-                {
-                    viewer.data_list[query_data].set_points(QiV,Eigen::RowVector3d(0.564706,0.847059,0.768627));
-                }
-                break;
-        }
-
-        viewer.data_list[object_data].clear();
-        if(show_P)
-        {
-            viewer.data_list[object_data].set_points(P,Eigen::RowVector3d(1,1,1));
-            viewer.data_list[object_data].set_edges(PN,E,Eigen::RowVector3d(0.8,0.8,0.8));
-        }else
-        {
-            viewer.data_list[object_data].set_mesh(V,F);
-        }
+        ni_row = ni_row % 100;
+        Eigen::MatrixXd mblock = Q.block(ni_row*10000, 0, 10000, 3);
+        Eigen::VectorXd mblock_wn = (WiV.array() > 0.5).cast<double>();
+        Eigen::VectorXd mblock_df = Q_df.block(ni_row*10000, 0, 10000, 1);
+        Eigen::VectorXd mblock_sdf = (mblock_wn.array()*2 - 1) * mblock_df.array();
+        igl::parula(WiV, false, Colors);
+        viewer.data_list[query_data].set_points(mblock,Colors);
     };
-
-
 
     viewer.callback_key_pressed =
             [&](igl::opengl::glfw::Viewer &, unsigned int key, int mod)
@@ -214,23 +132,17 @@ int main(int argc, char *argv[])
                     default:
                         return false;
                     case '1':
-                        show_P = !show_P;
+                        i_row = (i_row + 100 - 1) % 100;
                         break;
                     case '2':
-                        show_Q = (show_Q+1) % 3;
+                        i_row = (i_row + 1) % 100;
                         break;
                 }
-                update();
+                update(i_row);
                 return true;
             };
 
-    std::cout<<R"(
-FastWindingNumber
-  1  Toggle point cloud and triangle soup
-  2  Toggle hiding query points, showing query points, showing inside queries
-)";
-
-    update();
+    update(i_row);
     viewer.launch();
 
 }
