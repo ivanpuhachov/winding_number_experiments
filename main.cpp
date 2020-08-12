@@ -74,27 +74,27 @@ int main(int argc, char *argv[])
     }
 
     // corrupt mesh (from example 717)
-//    if(argc<=1)
-//    {
-//        // corrupt mesh
-//        Eigen::MatrixXd BC;
-//        igl::barycenter(V,F,BC);
-//        Eigen::MatrixXd OV = V;
-//        V.resize(F.rows()*3,3);
-//        for(int f = 0;f<F.rows();f++)
-//        {
-//            for(int c = 0;c<3;c++)
-//            {
-//                int v = f+c*F.rows();
-//                // random rotation about barycenter
-//                Eigen::AngleAxisd R(
-//                        0.5*static_cast <double> (rand()) / static_cast <double> (RAND_MAX),
-//                        Eigen::Vector3d::Random(3,1));
-//                V.row(v) = (OV.row(F(f,c))-BC.row(f))*R.matrix()+BC.row(f);
-//                F(f,c) = v;
-//            }
-//        }
-//    }
+    if(argc>2)
+    {
+        // corrupt mesh
+        Eigen::MatrixXd BC;
+        igl::barycenter(V,F,BC);
+        Eigen::MatrixXd OV = V;
+        V.resize(F.rows()*3,3);
+        for(int f = 0;f<F.rows();f++)
+        {
+            for(int c = 0;c<3;c++)
+            {
+                int v = f+c*F.rows();
+                // random rotation about barycenter
+                Eigen::AngleAxisd R(
+                        0.5*static_cast <double> (rand()) / static_cast <double> (RAND_MAX),
+                        Eigen::Vector3d::Random(3,1));
+                V.row(v) = (OV.row(F(f,c))-BC.row(f))*R.matrix()+BC.row(f);
+                F(f,c) = v;
+            }
+        }
+    }
 
     // Query points in the bounding box
     Eigen::MatrixXd Q(1000000, 3);
