@@ -40,7 +40,12 @@ int main(int argc, char *argv[])
     const Eigen::RowVector3d minDims = V.colwise().minCoeff();
     V = V - Eigen::VectorXd::Ones(V.rows()) * minDims;
     const double maxDims = V.maxCoeff();
-    V = V.array() / (Eigen::MatrixXd::Ones(V.rows(), V.cols()) * maxDims).array();
+//    V = V.array() / (Eigen::MatrixXd::Ones(V.rows(), V.cols()) * maxDims).array();
+    V = V.array() / maxDims;
+    const double maxDimX = V.col(0).maxCoeff();
+    const double maxDimY = V.col(1).maxCoeff();
+    const double maxDimZ = V.col(2).maxCoeff();
+    V = V.array() * 0.9 + 0.05;
 
 
 
@@ -103,9 +108,12 @@ int main(int argc, char *argv[])
         for (int i_y=0; i_y<100; ++i_y)
         {
             Eigen::MatrixXd myblock (100,3);
-            myblock.col(2) = Eigen::ArrayXd::LinSpaced(100,0.005,0.995);
-            myblock.col(1) = Eigen::VectorXd::Ones(100) * (0.005 + i_y * 0.01);
-            myblock.col(0) = Eigen::VectorXd::Ones(100) * (0.005 + i_x * 0.01);
+//            myblock.col(2) = Eigen::ArrayXd::LinSpaced(100,0.005,0.995);
+//            myblock.col(1) = Eigen::VectorXd::Ones(100) * (0.005 + i_y * 0.01);
+//            myblock.col(0) = Eigen::VectorXd::Ones(100) * (0.005 + i_x * 0.01);
+            myblock.col(2) = Eigen::ArrayXd::LinSpaced(100,0.005,0.995) * maxDimZ;
+            myblock.col(1) = Eigen::VectorXd::Ones(100) * (0.005 + i_y * 0.01) * maxDimY;
+            myblock.col(0) = Eigen::VectorXd::Ones(100) * (0.005 + i_x * 0.01) * maxDimX;
             Q.block(100*i_y + 10000*i_x, 0, 100, 3) = myblock;
         }
     }
