@@ -38,8 +38,12 @@ int main(int argc, char *argv[])
     const Eigen::RowVector3d minDims = V.colwise().minCoeff();
     V = V - Eigen::VectorXd::Ones(V.rows()) * minDims;
     const double maxDims = V.maxCoeff();
-    V = V.array() / (Eigen::MatrixXd::Ones(V.rows(), V.cols()) * maxDims).array();
-
+//    V = V.array() / (Eigen::MatrixXd::Ones(V.rows(), V.cols()) * maxDims).array();
+    V = V.array() / maxDims;
+    const double maxDimX = V.col(0).maxCoeff();
+    const double maxDimY = V.col(1).maxCoeff();
+    const double maxDimZ = V.col(2).maxCoeff();
+    V = V.array() * 0.9 + 0.05;
 
 
     // Sample mesh for point cloud
@@ -67,9 +71,9 @@ int main(int argc, char *argv[])
         for (int i_y=0; i_y<100; ++i_y)
         {
             Eigen::MatrixXd myblock (100,3);
-            myblock.col(2) = Eigen::ArrayXd::LinSpaced(100,0.005,0.995);
-            myblock.col(1) = Eigen::VectorXd::Ones(100) * (0.005 + i_y * 0.01);
-            myblock.col(0) = Eigen::VectorXd::Ones(100) * (0.005 + i_x * 0.01);
+            myblock.col(2) = Eigen::ArrayXd::LinSpaced(100,0.005,0.995) * maxDimZ;
+            myblock.col(1) = Eigen::VectorXd::Ones(100) * (0.005 + i_y * 0.01) * maxDimY;
+            myblock.col(0) = Eigen::VectorXd::Ones(100) * (0.005 + i_x * 0.01) * maxDimX;
             Q.block(100*i_y + 10000*i_x, 0, 100, 3) = myblock;
         }
     }
@@ -78,7 +82,7 @@ int main(int argc, char *argv[])
     Eigen::VectorXd sqrD;
     Eigen::VectorXi II;
     Eigen::MatrixXd CC;
-    igl::point_mesh_squared_distance(P,V,F,sqrD,II,CC);
+    igl::point_mesh_squared_distance(Q,V,F,sqrD,II,CC);
     Eigen::VectorXd Q_df = sqrD.array().sqrt();
 
     std::cout << "Evaluating sign of DF" << std::endl;
@@ -110,19 +114,24 @@ int main(int argc, char *argv[])
     viewer.data_list[object_data].set_mesh(V,F);
     viewer.data_list[object_data].point_size = 5;
 
+//    Eigen::MatrixXd Colors(Q.rows(), Q.cols());
+//    igl::parula(WiV, false, Colors);
+//    viewer.data_list[query_data].set_points(Q, Colors);
+
     int i_row = 0;
-    Eigen::MatrixXd Colors(10000, 3);
-    const auto update = [&](int ni_row)
-    {
-        viewer.data_list[query_data].clear();
+    auto update = [Q, WiV, sqrD, Q_df, query_data](igl::opengl::glfw::Viewer &viewer, int ni_row){
         ni_row = ni_row % 100;
         Eigen::MatrixXd mblock = Q.block(ni_row*10000, 0, 10000, 3);
-        Eigen::VectorXd mblock_wn = (WiV.array() > 0.5).cast<double>();
-        Eigen::VectorXd mblock_df = Q_df.block(ni_row*10000, 0, 10000, 1);
-        Eigen::VectorXd mblock_sdf = (mblock_wn.array()*2 - 1) * mblock_df.array();
-        igl::parula(WiV, false, Colors);
+        Eigen::VectorXd mblock_wn = WiV.block(ni_row*10000, 0, 10000, 3).cast<double>();
+        Eigen::VectorXd mblock_df = sqrD.block(ni_row*10000, 0, 10000, 1);
+        Eigen::VectorXd mblock_sdf = ((mblock_wn.array()>0.5).cast<double>()*2 - 1) * mblock_df.array();
+        Eigen::MatrixXd Colors(10000, 3);
+        Eigen::VectorXd visvector = mblock_wn;
+        igl::parula(visvector, false, Colors);
         viewer.data_list[query_data].set_points(mblock,Colors);
+        std::cout << "Row " << ni_row << ", max: " << visvector.maxCoeff() << ", min" << visvector.minCoeff() << std::endl;
     };
+
 
     viewer.callback_key_pressed =
             [&](igl::opengl::glfw::Viewer &, unsigned int key, int mod)
@@ -138,11 +147,11 @@ int main(int argc, char *argv[])
                         i_row = (i_row + 1) % 100;
                         break;
                 }
-                update(i_row);
+                update(viewer, i_row);
                 return true;
             };
 
-    update(i_row);
+    update(viewer, i_row);
     viewer.launch();
 
 }
