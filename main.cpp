@@ -19,6 +19,11 @@
 
 int main(int argc, char *argv[])
 {
+    std::string filename = "../bathtub.obj";
+    if (argc > 1){
+        filename = argv[1];
+        std::cout << filename << std::endl;
+    }
     const auto time = [](std::function<void(void)> func)->double
     {
         const double t_before = igl::get_seconds();
@@ -31,7 +36,7 @@ int main(int argc, char *argv[])
     Eigen::MatrixXd V;
     Eigen::MatrixXi F;
 //    igl::read_triangle_mesh("../bunny.off",V,F);
-    igl::read_triangle_mesh("../bathtub.obj", V,F);
+    igl::read_triangle_mesh(filename, V,F);
 
     // Normalize to unit sphere
     std::cout << "Normalizing dimensions" << std::endl;
